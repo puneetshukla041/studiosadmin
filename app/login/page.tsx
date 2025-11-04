@@ -19,7 +19,7 @@ export default function LoginPage() {
     const checkAuthStatus = async () => {
       const authed = await isAuthenticated();
       if (authed) {
-        router.push("/dashboard/members");
+        router.push("/dashboard");
       }
     };
     checkAuthStatus();
@@ -46,7 +46,7 @@ export default function LoginPage() {
         setIsLoading(false);
         setShowWelcome(true);
         setTimeout(() => {
-          router.push("/dashboard/members");
+          router.push("/dashboard");
         }, 1500);
       }, 1500);
     } else {
