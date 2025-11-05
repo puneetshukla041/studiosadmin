@@ -9,7 +9,7 @@ import {
     FiFolder, FiGrid, FiUserPlus, FiActivity, FiSettings, FiBarChart2, FiTrendingUp, FiCheckCircle,
     FiRefreshCw // Refresh Icon
 } from "react-icons/fi";
-import { isAuthenticated } from "@/lib/auth"; 
+import { isAuthenticated } from "@/lib/auth"; // Assuming this still works
 import { IconType } from "react-icons";
 
 // --- INTERFACE DEFINITIONS ---
@@ -31,7 +31,7 @@ interface Member {
         idCard: boolean;
         bgRemover: boolean;
         imageEnhancer: boolean;
-        assets: boolean;
+        assets: boolean; // Will be removed from UI, but kept in interface for DB compatibility
     };
     createdAt?: string;
     updatedAt?: string;
@@ -43,9 +43,16 @@ interface MemberUsage {
     seconds: number;
 }
 
+// Interface for Storage API response
+interface StorageData {
+    usedStorageKB: number;
+    usedStorageMB: number;
+    totalStorageMB: number;
+}
+
 type NotificationType = "success" | "info" | "error";
 
-// --- MOCK CHART COMPONENT (Visualizes Member Usage) ---
+// --- MOCK CHART COMPONENT (Visualizes Member Usage in MINUTES) ---
 interface MockChartProps {
     title: string;
     type: string;
@@ -58,6 +65,7 @@ const MockChart: React.FC<MockChartProps> = ({ title, type, data, color, dataTyp
     let content;
     
     if (dataType === 'memberUsage' && Array.isArray(data)) {
+        // Calculate max usage for visualization scaling
         const maxUsage = Math.max(...data.map(d => d.usage)) || 1; 
         
         content = (
@@ -75,8 +83,8 @@ const MockChart: React.FC<MockChartProps> = ({ title, type, data, color, dataTyp
                             ></div>
                         </div>
                         
-                        {/* Usage Value */}
-                        <span className="ml-3 font-semibold text-gray-800 whitespace-nowrap">{d.usage.toFixed(1)}h</span>
+                        {/* Usage Value - Displaying in MINUTES */}
+                        <span className="ml-3 font-semibold text-gray-800 whitespace-nowrap">{d.usage.toFixed(1)}min</span>
                     </div>
                 ))}
                 {data.length === 0 && <p className="text-center text-gray-400 italic mt-2">No usage data found.</p>}
@@ -147,6 +155,8 @@ export default function MembersPage() {
     
     // State for Usage (Individual Member Usage)
     const [memberUsageData, setMemberUsageData] = useState<MemberUsage[]>([]); 
+    // NEW STATE: Storage Data
+    const [storageUsedData, setStorageUsedData] = useState<StorageData | null>(null);
 
     // --- Core Functions ---
     const showNotification = useCallback((message: string, type: NotificationType) => {
@@ -159,32 +169,49 @@ export default function MembersPage() {
         }, 3300);
     }, []);
 
-    // NEW FUNCTION: Fetch aggregated usage (Requires backend endpoint /api/usage/all)
+    // NEW FUNCTION: Fetch aggregated storage data
+    const fetchStorageData = useCallback(async () => {
+        try {
+            const res = await fetch("/api/storage");
+            if (!res.ok) {
+                // Fetch the error message from the response if available
+                const errorData = await res.json().catch(() => ({ message: `Storage API error: ${res.status}` }));
+                throw new Error(errorData.message || `Storage API error: ${res.status}`);
+            }
+            const { data, success } = await res.json();
+            if (success) {
+                setStorageUsedData(data);
+            } else {
+                showNotification("Failed to fetch storage data.", "error");
+            }
+        } catch (err) {
+            console.error("Fetch storage error:", err);
+            showNotification("Failed to fetch storage data.", "error");
+        }
+    }, [showNotification]);
+
+    // FUNCTION: Fetch aggregated usage (Pulls from simulated ALL USAGE API)
     const fetchUsageData = useCallback(async (currentMembers: Member[]) => {
         if (currentMembers.length === 0) return;
 
-        // NOTE: This section MUST be replaced by a live API call to an endpoint
-        // that aggregates all usage seconds from your MongoDB Usage collection.
         try {
-            // --- START MOCK DATA SIMULATION ---
+            // NOTE: This simulation uses the real IDs and seconds provided by the user's MongoDB query
             const MOCK_USAGE_DATA = [
-                { userId: "68ee0ed3c6c929cf8d792c70", seconds: 7 }, // Based on your query results
-                { userId: "68fc67f9aa769cdd6e02d999", seconds: 1096 }, // Based on your query results
+                { userId: "68ee0ed3c6c929cf8d792c70", seconds: 7 }, 
+                { userId: "68fc67f9aa769cdd6e02d999", seconds: 1096 },
             ];
 
-            // If we have more members than mock data, add random data for them
             const dynamicMock = currentMembers.map(m => {
                 const existing = MOCK_USAGE_DATA.find(d => d.userId === m._id);
                 if (existing) return existing;
 
-                // Simulate data for any member not found in the initial mock (14h to 416h)
+                // Simulate data for other members (10 minutes to 600 minutes)
                 return {
                     userId: m._id,
-                    seconds: Math.floor(Math.random() * 1450000) + 50000, 
+                    seconds: Math.floor(Math.random() * 35400) + 600, 
                 };
             });
             setMemberUsageData(dynamicMock);
-            // --- END MOCK DATA SIMULATION ---
 
         } catch (err) {
             console.error("Fetch total usage error:", err);
@@ -220,12 +247,17 @@ export default function MembersPage() {
 
     const refreshAllData = useCallback(async () => {
         setIsApiLoading(true);
-        await fetchMembers();
+        // fetchMembers calls fetchUsageData internally
+        await fetchMembers(); 
+        await fetchStorageData(); // Fetch new storage data
         setIsApiLoading(false);
         showNotification("Data refreshed successfully.", "info");
-    }, [fetchMembers, showNotification]);
+    }, [fetchMembers, fetchStorageData, showNotification]);
 
     const handleAccessToggle = useCallback(async (memberId: string, field: keyof NonNullable<Member['access']>, value: boolean) => {
+        // Exclude 'assets' from being updated via this quick toggle since it's removed from the UI
+        if (field === 'assets') return; 
+        
         setIsApiLoading(true);
         try {
             const res = await fetch(`/api/members/${memberId}/access`, {
@@ -267,12 +299,13 @@ export default function MembersPage() {
                 showNotification("You need to log in to access this page.", "error");
             } else {
                 await fetchMembers();
+                await fetchStorageData(); // Initial storage data load
             }
             setIsPageLoading(false);
         };
 
         checkAuthenticationAndLoad();
-    }, [router, fetchMembers, showNotification]);
+    }, [router, fetchMembers, fetchStorageData, showNotification]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -295,7 +328,8 @@ export default function MembersPage() {
 
         try {
             let res: Response;
-            const dataToSend = { username, password, access: accessToggles };
+            // Ensure 'assets' is explicitly included in the data sent, using the form state (which is currently false)
+            const dataToSend = { username, password, access: accessToggles }; 
 
             if (editingId) {
                 res = await fetch(`/api/members/${editingId}`, {
@@ -328,6 +362,7 @@ export default function MembersPage() {
                 idCard: false, bgRemover: false, imageEnhancer: false, assets: false,
             });
             await fetchMembers();
+            await fetchStorageData(); // Refresh data after member creation/update
         } catch (err: any) {
             console.error("Save member error:", err);
             showNotification(err.message || "Failed to save member. Please try again.", "error");
@@ -343,6 +378,7 @@ export default function MembersPage() {
             const res = await fetch(`/api/members/${id}`, { method: "DELETE" });
             if (!res.ok) throw new Error("Failed to delete");
             await fetchMembers();
+            await fetchStorageData(); // Refresh data after deletion
             showNotification("Member deleted successfully!", "success");
         } catch (err: any) {
             console.error("Delete member error:", err);
@@ -418,13 +454,13 @@ export default function MembersPage() {
         });
     };
         
-    // --- Enhanced Statistic Data (Uses memberUsageData) ---
+    // --- Enhanced Statistic Data (Uses memberUsageData in MINUTES) ---
     const memberStats = useMemo(() => {
         const totalMembers = members.length;
         
-        const formatSecondsToHours = (seconds: number) => {
-            const hours = seconds / 3600;
-            return hours; 
+        const formatSecondsToMinutes = (seconds: number) => {
+            const minutes = seconds / 60;
+            return minutes; 
         };
         
         const totalUsageSeconds = memberUsageData.reduce((sum, usage) => sum + usage.seconds, 0);
@@ -435,26 +471,40 @@ export default function MembersPage() {
             const seconds = usageEntry?.seconds || 0;
             return {
                 name: member.username,
-                usage: formatSecondsToHours(seconds), // usage in hours
+                usage: formatSecondsToMinutes(seconds), // usage in MINUTES
                 seconds: seconds
             };
         }).sort((a, b) => b.usage - a.usage); // Sort descending
 
         // 2. Create data object for Access Distribution Chart
+        // REMOVED 'Assets Manager'
         const accessDistribution = {
             'Poster Editor': members.filter(m => m.access?.posterEditor).length,
             'Cert Editor': members.filter(m => m.access?.certificateEditor).length,
+            'Visiting Card': members.filter(m => m.access?.visitingCard).length,
+            'ID Card': members.filter(m => m.access?.idCard).length,
             'BG Remover': members.filter(m => m.access?.bgRemover).length,
-            'Assets Manager': members.filter(m => m.access?.assets).length,
+            'Image Enhancer': members.filter(m => m.access?.imageEnhancer).length,
         };
 
         return { 
             totalMembers, 
-            totalUsageHours: formatSecondsToHours(totalUsageSeconds).toFixed(1),
+            totalUsageMinutes: formatSecondsToMinutes(totalUsageSeconds).toFixed(1), // Display total in minutes
             memberUsageChartData,
             accessDistribution 
         };
     }, [members, memberUsageData]);
+
+    // CALCULATED VALUE: Storage Usage Percentage
+    const storageUsagePercentage = useMemo(() => {
+        if (!storageUsedData) return 0;
+        // Calculation based on MB, ensuring we don't divide by zero
+        if (storageUsedData.totalStorageMB === 0) return 0;
+
+        const percentage = (storageUsedData.usedStorageMB / storageUsedData.totalStorageMB) * 100;
+        // Clamp the value between 0 and 100
+        return Math.max(0, Math.min(100, percentage)); 
+    }, [storageUsedData]);
 
 
     // --- LOADING STATE ---
@@ -473,7 +523,7 @@ export default function MembersPage() {
     return (
         <div className="min-h-screen w-full font-sans antialiased bg-gray-50 text-gray-800 p-4 sm:p-6 md:p-8 lg:p-10">
 
-            {/* API Loading Overlay */}
+            {/* API Loading Overlay and Confirmation Modal remain here */}
             {isApiLoading && (
                 <div className="fixed inset-0 bg-white/70 backdrop-blur-sm z-[60] flex items-center justify-center">
                     <div className="text-center text-gray-700">
@@ -514,7 +564,7 @@ export default function MembersPage() {
             )}
 
             <div className="relative z-10 w-full max-w-full mx-auto">
-                {/* Notification/Toast */}
+                {/* Notification/Toast remains here */}
                 {notification && (
                     <div
                         className={`
@@ -578,46 +628,61 @@ export default function MembersPage() {
                             <FiUsers className="w-8 h-8 text-indigo-500 bg-indigo-50/20 p-2 rounded-full" />
                         </div>
                         
-                        {/* 2. Total Usage (Time-based metric) */}
+                        {/* 2. Total Usage (Time-based metric in MINUTES) */}
                         <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-gray-500">Total Usage (Hours)</p>
-                                <p className="text-3xl font-bold text-gray-900">{memberStats.totalUsageHours}</p>
+                                <p className="text-sm font-medium text-gray-500">Total Usage (Minutes)</p>
+                                <p className="text-3xl font-bold text-gray-900">{memberStats.totalUsageMinutes}</p>
                             </div>
                             <FiClock className="w-8 h-8 text-blue-500 bg-blue-50/20 p-2 rounded-full" />
                         </div>
                         
-                        {/* 3. Poster Editors */}
-                        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-500">Poster Editors</p>
-                                <p className="text-3xl font-bold text-gray-900">{memberStats.accessDistribution['Poster Editor']}</p>
+                        {/* NEW CARD: Storage Used (Now showing KB prominently) */}
+                        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-medium text-gray-500">Storage Used (KB)</p>
+                                <FiGrid className="w-8 h-8 text-purple-500 bg-purple-50/20 p-2 rounded-full" />
                             </div>
-                            <FiImage className="w-8 h-8 text-green-500 bg-green-50/20 p-2 rounded-full" />
+                            <p className="text-3xl font-bold text-gray-900 mb-2">
+                                {/* Use KB for the main display for better initial visibility of small usage */}
+                                {storageUsedData ? storageUsedData.usedStorageKB.toFixed(0) : '--'} KB
+                                <span className="text-lg font-medium text-gray-400 ml-2">({storageUsedData ? storageUsedData.usedStorageMB.toFixed(2) : '--'} MB)</span>
+                            </p>
+                            
+                            {/* Simple Progress Bar for Storage */}
+                            <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                <div 
+                                    className={`h-2.5 rounded-full transition-all duration-500 ${storageUsagePercentage > 80 ? 'bg-red-500' : 'bg-green-500'}`}
+                                    style={{ width: `${storageUsagePercentage.toFixed(0)}%` }}
+                                ></div>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                                {storageUsagePercentage.toFixed(1)}% Used of {storageUsedData?.totalStorageMB || '--'}MB
+                            </p>
                         </div>
 
-                        {/* 4. Asset Managers */}
+                        {/* 4. Image Enhancers (Replaced Assets Manager count) */}
                         <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-gray-500">Asset Managers</p>
-                                <p className="text-3xl font-bold text-gray-900">{memberStats.accessDistribution['Assets Manager']}</p>
+                                <p className="text-sm font-medium text-gray-500">Image Enhancers</p>
+                                <p className="text-3xl font-bold text-gray-900">{memberStats.accessDistribution['Image Enhancer']}</p>
                             </div>
-                            <FiFolder className="w-8 h-8 text-pink-500 bg-pink-50/20 p-2 rounded-full" />
+                            <FiStar className="w-8 h-8 text-pink-500 bg-pink-50/20 p-2 rounded-full" />
                         </div>
                     </div>
 
                     {/* Graphs and Charts */}
                     <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* NEW CHART: Member Usage Distribution (Shows usage per user name) */}
+                        {/* NEW CHART: Member Usage Distribution (Shows usage per user name in minutes) */}
                         <MockChart 
-                            title="Top Member Usage Distribution (Hours)" 
+                            title="Top Member Usage Distribution (Minutes)" 
                             type="Bar" 
                             data={memberStats.memberUsageChartData} // Array of {name, usage}
                             color="indigo" 
                             dataType="memberUsage"
                         />
-                        {/* EXISTING CHART: Module Access Distribution */}
-                         <MockChart 
+                        {/* EXISTING CHART: Module Access Distribution (Updated with new list) */}
+                           <MockChart 
                             title="Module Access Distribution" 
                             type="Bar" 
                             data={Object.keys(memberStats.accessDistribution).join(', ')} 
@@ -636,7 +701,10 @@ export default function MembersPage() {
                     <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6 sm:p-8 shadow-lg">
                         <h2 className="text-2xl font-bold mb-6 flex items-center gap-3 border-b border-gray-100 pb-4 text-gray-900">
                             {editingId ? (
-                                <><FiEdit3 className="text-2xl text-orange-500" /> Edit User Profile: <span className="text-indigo-600 ml-2">{username}</span></>
+                                <>
+                                    <FiEdit3 className="text-2xl text-orange-500" /> Edit User Profile: 
+                                    <span className="text-indigo-600 ml-2">{username}</span>
+                                </>
                             ) : (
                                 <><FiUserPlus className="text-2xl text-indigo-600" /> Create New User Account</>
                             )}
@@ -665,12 +733,12 @@ export default function MembersPage() {
                                         className="absolute inset-y-0 right-0 top-[26px] pr-3 flex items-center text-gray-500 hover:text-gray-700"
                                         disabled={isApiLoading}
                                     >
-                                        {showPassword ? <FiEyeOff /> : <FiEye />}
+                                        {showPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Access Toggles for Form */}
+                            {/* Access Toggles for Form (Removed Assets Manager) */}
                             <div className="border border-gray-200 p-4 rounded-xl bg-gray-50 shadow-inner">
                                 <h3 className="text-base font-semibold text-gray-700 mb-3 flex items-center gap-2 border-b pb-2 border-gray-200">
                                     <FiSettings className="text-indigo-500"/> Initial Access Configuration
@@ -683,7 +751,7 @@ export default function MembersPage() {
                                         idCard: { label: "ID Card", icon: FiInfo },
                                         bgRemover: { label: "BG Remover", icon: FiTrash2 },
                                         imageEnhancer: { label: "Image Enhancer", icon: FiStar },
-                                        assets: { label: "Assets Manager", icon: FiFolder },
+                                        // assets: { label: "Assets Manager", icon: FiFolder }, // REMOVED
                                     }).map(([key, { label, icon }]) => (
                                         <AccessToggle
                                             key={key} label={label} icon={icon as IconType}
@@ -720,7 +788,7 @@ export default function MembersPage() {
                         </form>
                     </div>
                     
-                    {/* Column 2: Quick Access Guide */}
+                    {/* Column 2: Quick Access Guide (Updated with new list) */}
                     <div className="lg:col-span-1 bg-white border border-gray-200 rounded-xl p-6 shadow-lg h-min">
                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2 border-b pb-2 border-gray-100">
                             <FiInfo className="text-indigo-600"/> Quick Guide
@@ -737,6 +805,10 @@ export default function MembersPage() {
                             <li className="flex items-start gap-3">
                                 <FiClock className="mt-1 flex-shrink-0 text-gray-500"/> 
                                 **Auditing:** All creation/update timestamps use the **system's timezone** for precise, traceable auditing.
+                            </li>
+                            <li className="flex items-start gap-3">
+                                <FiGrid className="mt-1 flex-shrink-0 text-purple-500"/> 
+                                **Storage:** Track your database usage against the allocated **{storageUsedData?.totalStorageMB || '--'}MB** limit.
                             </li>
                         </ul>
                     </div>
@@ -803,7 +875,7 @@ export default function MembersPage() {
                                                 <td className="px-4 py-3 whitespace-nowrap text-gray-500 text-xs">{formatDate(m.createdAt)}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-gray-500 text-xs">{formatDate(m.updatedAt)}</td>
                                                 <td className="px-4 py-3">
-                                                    {/* Inline Access Toggles (More compact) */}
+                                                    {/* Inline Access Toggles (Removed Assets Manager) */}
                                                     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1">
                                                         {Object.entries({
                                                             posterEditor: { label: "Poster", icon: FiImage },
@@ -812,7 +884,7 @@ export default function MembersPage() {
                                                             idCard: { label: "ID Card", icon: FiInfo },
                                                             bgRemover: { label: "BG Rmv", icon: FiTrash2 },
                                                             imageEnhancer: { label: "Enhancer", icon: FiStar },
-                                                            assets: { label: "Assets", icon: FiFolder },
+                                                            // assets: { label: "Assets", icon: FiFolder }, // REMOVED
                                                         }).map(([key, { label, icon }]) => (
                                                             <div key={key} className="flex items-center justify-between p-1 border border-gray-200 rounded-md bg-white shadow-xs">
                                                                 <div className="flex items-center gap-1">
