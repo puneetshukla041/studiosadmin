@@ -1,32 +1,29 @@
-// app/api/bug-reports/route.ts (for App Router)
-import dbConnect from '@/lib/dbConnect'; // Adjust path as necessary
-import BugReport from '@/models/BugReport'; // Adjust path as necessary
-import { NextResponse } from 'next/server';
+// D:\studiosadmin\studiosadmin\app\api\bug-reports\route.ts
 
-// Ensure this runs on the Node.js runtime environment for Mongoose
-export const runtime = 'nodejs'; 
+import { NextResponse } from "next/server";
+import dbConnect from "@/lib/dbConnect";
+import BugReport from "@/models/BugReport";
 
 export async function GET() {
+    await dbConnect();
     try {
-        await dbConnect();
+        // Fetches reports, including the resolutionMessage field
+        const reports = await BugReport.find().lean(); 
+        return NextResponse.json(reports, { status: 200 });
+    } catch (err) {
+        console.error("Bug Reports GET error:", err);
+        return NextResponse.json({ error: "Failed to fetch bug reports." }, { status: 500 });
+    }
+}
 
-        // 1. Fetch all bug reports, sorting by creation date (newest first)
-        const reports = await BugReport.find({})
-            .sort({ createdAt: -1 })
-            .lean(); // .lean() returns plain JavaScript objects, improving performance.
-        
-        // 2. Mongoose documents need to be serialized to plain JSON objects 
-        //    before being sent via a Next.js API route/NextResponse.
-        //    JSON.stringify/parse handles the conversion of Mongoose's Date objects.
-        const serializedReports = JSON.parse(JSON.stringify(reports));
-
-        return NextResponse.json(serializedReports, { status: 200 });
-
-    } catch (error) {
-        console.error("Bug report API error:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch bug reports from the database." },
-            { status: 500 }
-        );
+export async function POST(req: Request) {
+    await dbConnect();
+    try {
+        const body = await req.json();
+        const newReport = await BugReport.create(body);
+        return NextResponse.json(newReport, { status: 201 });
+    } catch (err) {
+        console.error("Bug Report POST error:", err);
+        return NextResponse.json({ error: "Failed to create bug report." }, { status: 500 });
     }
 }

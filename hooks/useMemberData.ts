@@ -1,4 +1,3 @@
-// D:\studiosadmin\studiosadmin\components\dashboard\hooks\useMemberData.ts
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth"; 
@@ -13,6 +12,7 @@ interface BugReport {
     rating: number;
     status: string; 
     createdAt: string; 
+    resolutionMessage?: string; 
 }
 
 interface Member {
@@ -181,6 +181,7 @@ export const useMemberData = () => {
     // --- Data Refetch Function ---
     const refreshAllData = useCallback(async () => {
         setIsApiLoading(true);
+        // Using Promise.allSettled allows one failed fetch (like 405) not to stop others
         await Promise.allSettled([
             fetchMembers(), 
             fetchStorageData(), 
@@ -190,9 +191,68 @@ export const useMemberData = () => {
         showNotification("Data refreshed successfully.", "info");
     }, [fetchMembers, fetchStorageData, fetchBugReports, showNotification]);
 
-    // --- CRUD and Mutation Functions ---
-    const handleAccessToggle = useCallback(async (memberId: string, field: keyof AccessTogglesState, value: boolean) => {
+    // --- ACTION: Resolve Bug Report ---
+    const handleResolveReport = useCallback(async (reportId: string, resolutionMessage: string) => {
+        setIsApiLoading(true);
+        try {
+            const res = await fetch(`/api/bug-reports/resolve/${reportId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ resolutionMessage }), 
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: "API resolution failed." }));
+                throw new Error(errorData.error || `Failed to resolve ticket: ${res.status}`);
+            }
+
+            const updatedReport: BugReport = await res.json(); 
+
+            setBugReports(prevReports => 
+                prevReports.map(report => 
+                    report._id === reportId ? updatedReport : report 
+                )
+            );
+
+            showNotification(`Ticket ${reportId.substring(0, 8)}... resolved and message saved!`, "success");
+            
+        } catch (error: any) {
+            console.error("Ticket resolution failed:", error);
+            showNotification(error.message || "Failed to close ticket. Check API logs.", "error");
+        } finally {
+            setIsApiLoading(false);
+        }
+    }, [showNotification]);
+    // ----------------------------------------------------------------------
+
+    /**
+     * 🟢 FIX: Redefining handleAccessToggle signature and logic to correctly handle:
+     * 1. The call order used by page.tsx: (field, value, memberId)
+     * 2. Local state update for new users (memberId === null)
+     * 3. Server API call for existing users (memberId is a string)
+     */
+    const handleAccessToggle = useCallback(async (
+        field: keyof AccessTogglesState,
+        value: boolean,
+        memberId: string | null 
+    ) => {
         if (field === 'assets') return; 
+
+        // 1. Always update local form state first (for both new/edit modes)
+        if (memberId === editingId) {
+            setAccessToggles(prev => ({
+                ...prev,
+                [field]: value,
+            }));
+        }
+
+        // 2. Only proceed with API call if an existing member is being edited
+        if (!memberId || memberId === 'local') { // 'local' check added for robustness if component passes it
+            // We successfully updated local state, now we exit.
+            return;
+        }
+
+        // --- Server Update Logic (Only for existing members) ---
         setIsApiLoading(true);
         try {
             const res = await fetch(`/api/members/${memberId}/access`, {
@@ -200,8 +260,10 @@ export const useMemberData = () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ field, value }),
             });
+            
             if (!res.ok) throw new Error("Failed to update access.");
 
+            // Optimistic update of the members list in state
             setMembers(prevMembers =>
                 prevMembers.map(m => {
                     if (m._id === memberId) {
@@ -221,13 +283,13 @@ export const useMemberData = () => {
         } finally {
             setIsApiLoading(false);
         }
-    }, [showNotification]);
+    }, [showNotification, editingId]); // Added editingId to dependencies for local state check
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsApiLoading(true);
 
-        if (!username.trim() || !password.trim()) {
+        if (!username.trim() || (!editingId && !password.trim())) {
             showNotification("Username and password cannot be empty.", "info");
             setIsApiLoading(false);
             return;
@@ -303,7 +365,7 @@ export const useMemberData = () => {
     const handleEdit = (member: Member) => {
         setEditingId(member._id);
         setUsername(member.username);
-        setPassword(member.password);
+        setPassword(""); // Clear password field on edit for security/UX
         setAccessToggles(member.access || initialAccessToggles);
         showNotification(`Editing "${member.username}"...`, "info");
     };
@@ -427,5 +489,6 @@ export const useMemberData = () => {
         // Actions
         showNotification, refreshAllData, handleAccessToggle, handleSubmit, handleDelete,
         handleEdit, handleCancelEdit, handleClearForm, handleLogout,
+        handleResolveReport,
     };
 };

@@ -1,9 +1,11 @@
+// BugReportListCard.tsx
+
 import React, { useMemo, useState, useCallback } from 'react';
 import { 
-    FiStar, FiAlertTriangle, FiX, FiCheckCircle, FiSend, FiMessageSquare 
-} from "react-icons/fi"; // Added new icons for modal
+    FiStar, FiAlertTriangle, FiX, FiCheckCircle, FiSend, FiMessageSquare, FiUser 
+} from "react-icons/fi"; 
 
-// --- INTERFACE DEFINITION (Needed in both files) ---
+// --- INTERFACE DEFINITION ---
 interface BugReport {
     _id: string;
     userId: string;
@@ -11,29 +13,25 @@ interface BugReport {
     username: string; 
     description: string;
     rating: number;
-    status: string; // e.g., "Open", "In Progress", "Resolved", "Closed"
+    status: string; 
     createdAt: string; 
+    resolutionMessage?: string; 
 }
-// ----------------------------------------------------
+// ----------------------------
 
 interface BugReportListCardProps {
     reports: BugReport[];
-    // New prop: Function provided by the parent to handle API interaction for resolving a report
+    // This is implemented in the parent component to call the API
     onResolveReport: (reportId: string, resolutionMessage: string) => Promise<void>; 
 }
 
 const BugReportListCard: React.FC<BugReportListCardProps> = ({ reports, onResolveReport }) => {
-    // State to manage the currently selected report for the detail modal
     const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-    // State for the resolution message to be sent to the user
     const [resolutionMessage, setResolutionMessage] = useState('');
-    // State for API loading during resolution
     const [isResolving, setIsResolving] = useState(false);
 
-    // Find the currently selected report object
     const selectedReport = useMemo(() => reports.find(r => r._id === selectedReportId), [reports, selectedReportId]);
     
-    // Sort reports: Open > In Progress > Resolved > Closed, then by newest
     const sortedReports = useMemo(() => {
         const statusOrder: { [key: string]: number } = { "Open": 1, "In Progress": 2, "Resolved": 3, "Closed": 4 };
         return [...reports].sort((a, b) => {
@@ -60,7 +58,7 @@ const BugReportListCard: React.FC<BugReportListCardProps> = ({ reports, onResolv
         const stars = [];
         for (let i = 1; i <= 5; i++) {
             stars.push(
-                <FiStar key={i} className={`w-3 h-3 ${i <= rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
+                <FiStar key={i} className={`w-3 h-3 ${i <= rating ? 'text-yellow-500 fill-yellow-500' : 'text-gray-300'}`} />
             );
         }
         return <div className="flex items-center space-x-0.5">{stars}</div>;
@@ -71,74 +69,85 @@ const BugReportListCard: React.FC<BugReportListCardProps> = ({ reports, onResolv
         setResolutionMessage('');
     }, []);
 
-    // Function to handle the resolution action
+    // Function that calls the prop provided by the parent
     const handleResolve = useCallback(async () => {
         if (!selectedReport || resolutionMessage.trim().length === 0) return;
 
         setIsResolving(true);
         try {
-            // Call the parent component's handler to update the database
             await onResolveReport(selectedReport._id, resolutionMessage);
-            // Clear state and close modal only on success
             closeModal();
         } catch (error) {
             console.error("Error resolving bug report:", error);
-            // In a real app, display a user-friendly error message.
+            // Re-throw or handle error display here
         } finally {
             setIsResolving(false);
         }
     }, [selectedReport, resolutionMessage, onResolveReport, closeModal]);
 
 
-    // The Modal Component for viewing and resolving the report
     const BugReportDetailModal = () => {
         if (!selectedReport) return null;
         
         const isResolvedOrClosed = selectedReport.status === 'Resolved' || selectedReport.status === 'Closed';
         
         return (
-            <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 transition-opacity duration-300">
+            <div className={`fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 transition-opacity duration-300`}>
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden transform transition-all scale-100">
                     {/* Modal Header */}
-                    <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+                    <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                         <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                            <FiAlertTriangle className="text-red-600" /> Bug Report: {selectedReport.title}
+                            <FiAlertTriangle className="text-2xl text-red-600" /> Bug Report: <span className='truncate max-w-[300px]'>{selectedReport.title}</span>
                         </h3>
-                        <button onClick={closeModal} className="p-2 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
-                            <FiX className="w-5 h-5" />
+                        <button onClick={closeModal} className="p-2 rounded-full text-gray-500 hover:bg-gray-200 transition-colors">
+                            <FiX className="w-6 h-6" />
                         </button>
                     </div>
 
                     {/* Modal Body */}
-                    <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                    <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                         {/* Report Details */}
-                        <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="space-y-4 p-4 bg-indigo-50/50 rounded-lg border border-indigo-200">
                             <div className="flex justify-between items-center text-sm">
-                                <p className="font-medium text-gray-700">Reported By: <span className="text-indigo-600">{selectedReport.username}</span></p>
+                                <p className="font-medium text-gray-700 flex items-center gap-2">
+                                    <FiUser className="w-4 h-4 text-indigo-500"/> Reported By: <span className="text-indigo-700 font-semibold">{selectedReport.username}</span>
+                                </p>
                                 {getRatingStars(selectedReport.rating)}
                             </div>
-                            <p className="text-xs text-gray-500 flex items-center gap-1">
-                                Reported On: {new Date(selectedReport.createdAt).toLocaleString()}
-                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ml-2 ${getStatusStyle(selectedReport.status)}`}>
+                            <div className='flex items-center justify-between'>
+                                <p className="text-xs text-gray-600 flex items-center gap-1">
+                                    Reported On: {new Date(selectedReport.createdAt).toLocaleString()}
+                                </p>
+                                <span className={`text-[11px] font-semibold px-3 py-1 rounded-full border shadow-sm ${getStatusStyle(selectedReport.status)}`}>
                                     {selectedReport.status}
                                 </span>
-                            </p>
-                            <p className="text-sm text-gray-800 font-medium pt-2">Description:</p>
-                            <div className="p-3 bg-white rounded-md border border-gray-300 text-sm text-gray-700 whitespace-pre-wrap">
+                            </div>
+                            
+                            <p className="text-sm text-gray-800 font-medium pt-2 border-t border-indigo-200">Description:</p>
+                            <div className="p-3 bg-white rounded-md border border-gray-300 text-sm text-gray-700 whitespace-pre-wrap shadow-inner max-h-40 overflow-y-auto">
                                 {selectedReport.description}
                             </div>
                         </div>
 
-                        {/* Resolution Area */}
-                        {!isResolvedOrClosed && (
+                        {/* Resolution Area - Display existing resolution if available, otherwise show input */}
+                        {isResolvedOrClosed ? (
+                            <div className="pt-4 border-t border-gray-100">
+                                <h4 className="text-md font-semibold text-gray-800 mb-2 flex items-center gap-1 text-green-700">
+                                    <FiCheckCircle className="w-4 h-4"/> Resolution Sent to User
+                                </h4>
+                                <div className="p-3 bg-green-50 rounded-lg border border-green-300 text-sm text-gray-700 whitespace-pre-wrap shadow-inner">
+                                    {selectedReport.resolutionMessage || "Resolution message was not saved or is unavailable."}
+                                </div>
+                            </div>
+                        ) : (
                             <div className="pt-4 border-t border-gray-100">
                                 <h4 className="text-md font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                                    <FiMessageSquare className="w-4 h-4 text-indigo-500"/> Resolution Message to User (Required to Close)
+                                    <FiMessageSquare className="w-4 h-4 text-indigo-500"/> Resolution Message (Required to Close Ticket)
                                 </h4>
                                 <textarea
-                                    className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                    rows={4}
-                                    placeholder={`Explain how the bug (${selectedReport.title}) was resolved. This message will be sent to the user ${selectedReport.username} upon closing the ticket.`}
+                                    className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500 transition-shadow shadow-sm focus:shadow-md"
+                                    rows={5} 
+                                    placeholder={`Explain how the bug (${selectedReport.title}) was resolved. This message will be saved and sent to the user ${selectedReport.username} upon closing the ticket.`}
                                     value={resolutionMessage}
                                     onChange={(e) => setResolutionMessage(e.target.value)}
                                     disabled={isResolving}
@@ -146,29 +155,22 @@ const BugReportListCard: React.FC<BugReportListCardProps> = ({ reports, onResolv
                                 />
                             </div>
                         )}
-                        
-                        {isResolvedOrClosed && (
-                            <div className="p-4 bg-green-50 text-green-700 rounded-lg border border-green-300 text-sm font-medium flex items-center gap-2">
-                                <FiCheckCircle className="w-5 h-5"/> This report is already marked as <span className="font-bold">{selectedReport.status}</span>.
-                            </div>
-                        )}
                     </div>
                     
                     {/* Modal Footer (Actions) */}
-                    <div className="p-5 border-t border-gray-100 flex justify-end gap-3">
+                    <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
                         <button 
                             onClick={closeModal} 
                             disabled={isResolving}
-                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors shadow-sm"
+                            className="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors shadow-sm"
                         >
                             {isResolvedOrClosed ? 'Close View' : 'Cancel'}
                         </button>
                         {!isResolvedOrClosed && (
                             <button 
                                 onClick={handleResolve} 
-                                // Disable if resolving or message is empty
                                 disabled={isResolving || resolutionMessage.trim().length === 0}
-                                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-md disabled:opacity-50 flex items-center gap-1"
+                                className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
                             >
                                 {isResolving ? (
                                     <>
@@ -176,7 +178,7 @@ const BugReportListCard: React.FC<BugReportListCardProps> = ({ reports, onResolv
                                         Processing...
                                     </>
                                 ) : (
-                                    <><FiSend className="w-4 h-4" /> Close Ticket & Notify User</>
+                                    <><FiSend className="w-4 h-4" /> Close Ticket & Save Resolution</>
                                 )}
                             </button>
                         )}
@@ -189,27 +191,33 @@ const BugReportListCard: React.FC<BugReportListCardProps> = ({ reports, onResolv
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-lg h-full">
             <p className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2 border-b pb-2 border-gray-100">
-                <FiAlertTriangle className="text-red-600" /> Recent Bug Reports ({reports.length})
+                <FiAlertTriangle className="text-xl text-red-600" /> Recent Bug Reports ({reports.length})
             </p>
             <div className="space-y-2 pr-2">
                 {reports.length > 0 ? (
                     sortedReports.map((report) => (
                         <div 
                             key={report._id} 
-                            // Open the modal on click
                             onClick={() => setSelectedReportId(report._id)}
-                            className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-100 transition-colors cursor-pointer active:scale-[.99] transform"
+                            className="p-3 bg-gray-50 border border-gray-200 rounded-lg shadow-sm hover:bg-indigo-50 hover:border-indigo-300 transition-all duration-150 cursor-pointer active:scale-[.99] transform focus:ring-2 focus:ring-indigo-400"
+                            tabIndex={0}
                         >
-                            <div className="flex justify-between items-start mb-0.5">
-                                <span className="text-sm font-semibold text-gray-900 truncate max-w-[80%]">{report.title}</span>
-                                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${getStatusStyle(report.status)}`}>
+                            {/* --- LINE 1: Title and Status (Flex row) --- */}
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-sm font-semibold text-gray-900 truncate mr-2 flex-1 min-w-0">
+                                    {report.title}
+                                </span>
+                                <span className={`flex-shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap shadow-xs ${getStatusStyle(report.status)}`}>
                                     {report.status}
                                 </span>
                             </div>
+
+                            {/* --- LINE 2: Reporter and Rating (Flex row) --- */}
                             <div className="flex justify-between items-center text-xs text-gray-600">
                                 <p className="flex items-center gap-1">
+                                    <FiUser className="w-3 h-3 text-gray-400"/>
                                     <span className="font-medium text-[11px]">{report.username || 'N/A'}</span> 
-                                    <span className="text-gray-400 text-[10px]">({new Date(report.createdAt).toLocaleDateString()})</span>
+                                    <span className="text-gray-400 text-[10px] ml-1">({new Date(report.createdAt).toLocaleDateString()})</span>
                                 </p>
                                 {getRatingStars(report.rating)}
                             </div>
