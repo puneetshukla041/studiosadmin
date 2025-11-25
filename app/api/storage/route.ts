@@ -17,6 +17,8 @@ async function connectToDatabase() {
         throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
     }
 
+    
+
     client = await MongoClient.connect(process.env.MONGODB_URI);
     db = client.db('employeeaccess'); // Replace with your actual database name
     return { client, db };

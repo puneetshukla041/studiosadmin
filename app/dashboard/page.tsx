@@ -7,12 +7,25 @@ import {
     FiCheck, FiInfo, FiAlertCircle, FiBell, FiPlusCircle, FiSearch, FiEye,
     FiEyeOff, FiRotateCcw, FiLoader, FiClock, FiImage, FiCamera, FiStar,
     FiFolder, FiGrid, FiUserPlus, FiActivity, FiSettings, FiBarChart2, FiTrendingUp, FiCheckCircle,
-    FiRefreshCw // Refresh Icon
+    FiRefreshCw, // Refresh Icon
 } from "react-icons/fi";
-import { isAuthenticated } from "@/lib/auth"; // Assuming this still works
+import { isAuthenticated } from "@/lib/auth"; 
 import { IconType } from "react-icons";
+// IMPORT THE NEW COMPONENT
+import BugReportListCard from './BugReportListCard'; 
 
 // --- INTERFACE DEFINITIONS ---
+interface BugReport {
+    _id: string;
+    userId: string;
+    title: string;
+    username: string; 
+    description: string;
+    rating: number;
+    status: string; // e.g., "Open", "In Progress", "Resolved", "Closed"
+    createdAt: string; 
+}
+
 interface AccessToggleProps {
     label: string;
     icon: IconType;
@@ -31,19 +44,17 @@ interface Member {
         idCard: boolean;
         bgRemover: boolean;
         imageEnhancer: boolean;
-        assets: boolean; // Will be removed from UI, but kept in interface for DB compatibility
+        assets: boolean;
     };
     createdAt?: string;
     updatedAt?: string;
 }
 
-// Interface for backend usage data
 interface MemberUsage {
     userId: string;
     seconds: number;
 }
 
-// Interface for Storage API response
 interface StorageData {
     usedStorageKB: number;
     usedStorageMB: number;
@@ -52,7 +63,7 @@ interface StorageData {
 
 type NotificationType = "success" | "info" | "error";
 
-// --- MOCK CHART COMPONENT (Visualizes Member Usage in MINUTES) ---
+// --- MOCK CHART COMPONENT (Simplified to Placeholder) ---
 interface MockChartProps {
     title: string;
     type: string;
@@ -61,44 +72,12 @@ interface MockChartProps {
     dataType: 'distribution' | 'memberUsage';
 }
 
-const MockChart: React.FC<MockChartProps> = ({ title, type, data, color, dataType }) => {
-    let content;
-    
-    if (dataType === 'memberUsage' && Array.isArray(data)) {
-        // Calculate max usage for visualization scaling
-        const maxUsage = Math.max(...data.map(d => d.usage)) || 1; 
-        
-        content = (
-            <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
-                {data.slice(0, 5).map((d, index) => (
-                    <div key={index} className="flex items-center text-xs">
-                        {/* Member Name */}
-                        <span className="w-20 text-gray-700 font-medium truncate">{d.name}</span>
-                        
-                        {/* Usage Bar */}
-                        <div className="flex-1 bg-gray-200 rounded-full h-3 ml-3">
-                            <div 
-                                className={`bg-indigo-600 h-3 rounded-full transition-all duration-500 shadow-sm`}
-                                style={{ width: `${(d.usage / maxUsage) * 100}%` }}
-                            ></div>
-                        </div>
-                        
-                        {/* Usage Value - Displaying in MINUTES */}
-                        <span className="ml-3 font-semibold text-gray-800 whitespace-nowrap">{d.usage.toFixed(1)}min</span>
-                    </div>
-                ))}
-                {data.length === 0 && <p className="text-center text-gray-400 italic mt-2">No usage data found.</p>}
-                {data.length > 5 && <p className="text-center text-gray-500 italic mt-2 text-xs">...showing top 5 of {data.length} users</p>}
-            </div>
-        );
-    } else {
-        // Default placeholder for other charts (e.g., Module Access Distribution)
-        content = (
-            <div className="text-center h-48 flex items-center justify-center bg-gray-50 border border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-medium italic">
-                [{type} Chart Placeholder: {data}]
-            </div>
-        );
-    }
+const MockChart: React.FC<MockChartProps> = ({ title }) => {
+    const content = (
+        <div className="text-center h-48 flex items-center justify-center bg-gray-50 border border-dashed border-gray-200 rounded-xl">
+             {/* The chart area is empty as requested */}
+        </div>
+    );
 
     return (
         <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-lg h-full">
@@ -153,6 +132,8 @@ export default function MembersPage() {
     });
     const [isConfirmingDelete, setIsConfirmingDelete] = useState<string | null>(null);
     
+    const [bugReports, setBugReports] = useState<BugReport[]>([]);
+    
     // State for Usage (Individual Member Usage)
     const [memberUsageData, setMemberUsageData] = useState<MemberUsage[]>([]); 
     // NEW STATE: Storage Data
@@ -169,12 +150,42 @@ export default function MembersPage() {
         }, 3300);
     }, []);
 
-    // NEW FUNCTION: Fetch aggregated storage data
+    // **UPDATED FUNCTION**: Fetch Bug Reports - Attempting live fetch
+    const fetchBugReports = useCallback(async () => {
+        setIsApiLoading(true);
+        try {
+            // !!! IMPORTANT: This path must point to your Next.js API route
+            const res = await fetch("/api/bug-reports"); 
+
+            if (!res.ok) {
+                throw new Error(`Failed to fetch bug reports. Status: ${res.status}`);
+            }
+            
+            const data: BugReport[] = await res.json();
+            
+            const mappedReports = data.map(report => ({
+                ...report,
+                // Temporary mock/placeholder for username if missing from API response:
+                username: report.username || (report.userId.length > 10 ? `User ${report.userId.substring(0, 4)}...` : 'Unknown')
+            }));
+            
+            setBugReports(mappedReports);
+
+        } catch (err) {
+            console.error("Fetch bug reports error:", err);
+            showNotification(`Error connecting to Bug Report API. Ensure /api/bug-reports is running.`, "error");
+            setBugReports([]); 
+        } finally {
+            setIsApiLoading(false);
+        }
+    }, [showNotification]);
+
+
     const fetchStorageData = useCallback(async () => {
+        // ... (Storage fetch logic remains the same)
         try {
             const res = await fetch("/api/storage");
             if (!res.ok) {
-                // Fetch the error message from the response if available
                 const errorData = await res.json().catch(() => ({ message: `Storage API error: ${res.status}` }));
                 throw new Error(errorData.message || `Storage API error: ${res.status}`);
             }
@@ -190,22 +201,22 @@ export default function MembersPage() {
         }
     }, [showNotification]);
 
-    // FUNCTION: Fetch aggregated usage (Pulls from simulated ALL USAGE API)
     const fetchUsageData = useCallback(async (currentMembers: Member[]) => {
+        // ... (Usage mock logic remains the same since a live API path wasn't provided)
         if (currentMembers.length === 0) return;
 
         try {
-            // NOTE: This simulation uses the real IDs and seconds provided by the user's MongoDB query
+            // MOCK data remains here as no live usage API was provided
             const MOCK_USAGE_DATA = [
                 { userId: "68ee0ed3c6c929cf8d792c70", seconds: 7 }, 
                 { userId: "68fc67f9aa769cdd6e02d999", seconds: 1096 },
             ];
 
             const dynamicMock = currentMembers.map(m => {
+                const usageEntry = memberUsageData.find(u => u.userId === m._id);
                 const existing = MOCK_USAGE_DATA.find(d => d.userId === m._id);
                 if (existing) return existing;
 
-                // Simulate data for other members (10 minutes to 600 minutes)
                 return {
                     userId: m._id,
                     seconds: Math.floor(Math.random() * 35400) + 600, 
@@ -217,7 +228,7 @@ export default function MembersPage() {
             console.error("Fetch total usage error:", err);
             showNotification("Failed to fetch usage data.", "error");
         }
-    }, [showNotification]);
+    }, [showNotification, memberUsageData]);
 
     const fetchMembers = useCallback(async () => {
         setIsApiLoading(true);
@@ -234,7 +245,6 @@ export default function MembersPage() {
             const data: Member[] = await res.json();
             setMembers(data);
             
-            // Call usage data fetching after members are successfully fetched
             await fetchUsageData(data); 
 
         } catch (err) {
@@ -247,15 +257,14 @@ export default function MembersPage() {
 
     const refreshAllData = useCallback(async () => {
         setIsApiLoading(true);
-        // fetchMembers calls fetchUsageData internally
         await fetchMembers(); 
-        await fetchStorageData(); // Fetch new storage data
+        await fetchStorageData(); 
+        await fetchBugReports(); 
         setIsApiLoading(false);
         showNotification("Data refreshed successfully.", "info");
-    }, [fetchMembers, fetchStorageData, showNotification]);
+    }, [fetchMembers, fetchStorageData, fetchBugReports, showNotification]);
 
     const handleAccessToggle = useCallback(async (memberId: string, field: keyof NonNullable<Member['access']>, value: boolean) => {
-        // Exclude 'assets' from being updated via this quick toggle since it's removed from the UI
         if (field === 'assets') return; 
         
         setIsApiLoading(true);
@@ -291,6 +300,37 @@ export default function MembersPage() {
         }
     }, [showNotification]);
 
+    // --- NEW ACTION: Resolve Bug Report ---
+    const handleResolveReport = useCallback(async (reportId: string, resolutionMessage: string) => {
+        setIsApiLoading(true);
+        try {
+            // Note: Update this API path if your server endpoint is different
+            const res = await fetch(`/api/bug-reports/resolve/${reportId}`, {
+                method: "PUT", // Use PUT to update the status and resolution message
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    resolutionMessage, 
+                    status: "Resolved" // Update the status upon resolution
+                }),
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ message: `Failed to resolve report. Status: ${res.status}` }));
+                throw new Error(errorData.message || "Failed to resolve report.");
+            }
+            
+            await fetchBugReports(); // Refresh the list to reflect the status change
+            showNotification(`Bug Report ${reportId.substring(0, 8)}... resolved and user notified!`, "success");
+
+        } catch (err: any) {
+            console.error("Resolve bug report error:", err);
+            showNotification(err.message || "Failed to resolve bug report. Please check API connection.", "error");
+        } finally {
+            setIsApiLoading(false);
+        }
+    }, [showNotification, fetchBugReports]);
+
+
     useEffect(() => {
         const checkAuthenticationAndLoad = async () => {
             const authed = await isAuthenticated();
@@ -299,13 +339,14 @@ export default function MembersPage() {
                 showNotification("You need to log in to access this page.", "error");
             } else {
                 await fetchMembers();
-                await fetchStorageData(); // Initial storage data load
+                await fetchStorageData(); 
+                await fetchBugReports(); 
             }
             setIsPageLoading(false);
         };
 
         checkAuthenticationAndLoad();
-    }, [router, fetchMembers, fetchStorageData, showNotification]);
+    }, [router, fetchMembers, fetchStorageData, fetchBugReports, showNotification]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -328,7 +369,6 @@ export default function MembersPage() {
 
         try {
             let res: Response;
-            // Ensure 'assets' is explicitly included in the data sent, using the form state (which is currently false)
             const dataToSend = { username, password, access: accessToggles }; 
 
             if (editingId) {
@@ -362,7 +402,7 @@ export default function MembersPage() {
                 idCard: false, bgRemover: false, imageEnhancer: false, assets: false,
             });
             await fetchMembers();
-            await fetchStorageData(); // Refresh data after member creation/update
+            await fetchStorageData(); 
         } catch (err: any) {
             console.error("Save member error:", err);
             showNotification(err.message || "Failed to save member. Please try again.", "error");
@@ -378,7 +418,7 @@ export default function MembersPage() {
             const res = await fetch(`/api/members/${id}`, { method: "DELETE" });
             if (!res.ok) throw new Error("Failed to delete");
             await fetchMembers();
-            await fetchStorageData(); // Refresh data after deletion
+            await fetchStorageData(); 
             showNotification("Member deleted successfully!", "success");
         } catch (err: any) {
             console.error("Delete member error:", err);
@@ -477,7 +517,6 @@ export default function MembersPage() {
         }).sort((a, b) => b.usage - a.usage); // Sort descending
 
         // 2. Create data object for Access Distribution Chart
-        // REMOVED 'Assets Manager'
         const accessDistribution = {
             'Poster Editor': members.filter(m => m.access?.posterEditor).length,
             'Cert Editor': members.filter(m => m.access?.certificateEditor).length,
@@ -498,11 +537,9 @@ export default function MembersPage() {
     // CALCULATED VALUE: Storage Usage Percentage
     const storageUsagePercentage = useMemo(() => {
         if (!storageUsedData) return 0;
-        // Calculation based on MB, ensuring we don't divide by zero
         if (storageUsedData.totalStorageMB === 0) return 0;
 
         const percentage = (storageUsedData.usedStorageMB / storageUsedData.totalStorageMB) * 100;
-        // Clamp the value between 0 and 100
         return Math.max(0, Math.min(100, percentage)); 
     }, [storageUsedData]);
 
@@ -519,7 +556,7 @@ export default function MembersPage() {
         );
     }
 
-    // --- MAIN RENDER (Updated Statistics Cards and New Usage Graph) ---
+    // --- MAIN RENDER (Bug Report Card replaces one MockChart) ---
     return (
         <div className="min-h-screen w-full font-sans antialiased bg-gray-50 text-gray-800 p-4 sm:p-6 md:p-8 lg:p-10">
 
@@ -637,19 +674,17 @@ export default function MembersPage() {
                             <FiClock className="w-8 h-8 text-blue-500 bg-blue-50/20 p-2 rounded-full" />
                         </div>
                         
-                        {/* NEW CARD: Storage Used (Now showing KB prominently) */}
+                        {/* 3. Storage Used */}
                         <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
                             <div className="flex items-center justify-between mb-3">
                                 <p className="text-sm font-medium text-gray-500">Storage Used (KB)</p>
                                 <FiGrid className="w-8 h-8 text-purple-500 bg-purple-50/20 p-2 rounded-full" />
                             </div>
                             <p className="text-3xl font-bold text-gray-900 mb-2">
-                                {/* Use KB for the main display for better initial visibility of small usage */}
                                 {storageUsedData ? storageUsedData.usedStorageKB.toFixed(0) : '--'} KB
                                 <span className="text-lg font-medium text-gray-400 ml-2">({storageUsedData ? storageUsedData.usedStorageMB.toFixed(2) : '--'} MB)</span>
                             </p>
                             
-                            {/* Simple Progress Bar for Storage */}
                             <div className="w-full bg-gray-200 rounded-full h-2.5">
                                 <div 
                                     className={`h-2.5 rounded-full transition-all duration-500 ${storageUsagePercentage > 80 ? 'bg-red-500' : 'bg-green-500'}`}
@@ -661,7 +696,7 @@ export default function MembersPage() {
                             </p>
                         </div>
 
-                        {/* 4. Image Enhancers (Replaced Assets Manager count) */}
+                        {/* 4. Image Enhancers */}
                         <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm font-medium text-gray-500">Image Enhancers</p>
@@ -671,21 +706,20 @@ export default function MembersPage() {
                         </div>
                     </div>
 
-                    {/* Graphs and Charts */}
+                    {/* Graphs and Charts - UPDATED SECTION */}
                     <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* NEW CHART: Member Usage Distribution (Shows usage per user name in minutes) */}
-                        <MockChart 
-                            title="Top Member Usage Distribution (Minutes)" 
-                            type="Bar" 
-                            data={memberStats.memberUsageChartData} // Array of {name, usage}
-                            color="indigo" 
-                            dataType="memberUsage"
+                        
+                        {/* REPLACEMENT CARD: Bug Report List */}
+                        <BugReportListCard 
+                            reports={bugReports} 
+                            onResolveReport={handleResolveReport} // <-- PROP ADDED HERE
                         />
-                        {/* EXISTING CHART: Module Access Distribution (Updated with new list) */}
-                           <MockChart 
+
+                        {/* EXISTING CHART: Module Access Distribution (now in the second slot) */}
+                        <MockChart 
                             title="Module Access Distribution" 
                             type="Bar" 
-                            data={Object.keys(memberStats.accessDistribution).join(', ')} 
+                            data={memberStats.accessDistribution} 
                             color="green" 
                             dataType="distribution"
                         />
@@ -751,7 +785,6 @@ export default function MembersPage() {
                                         idCard: { label: "ID Card", icon: FiInfo },
                                         bgRemover: { label: "BG Remover", icon: FiTrash2 },
                                         imageEnhancer: { label: "Image Enhancer", icon: FiStar },
-                                        // assets: { label: "Assets Manager", icon: FiFolder }, // REMOVED
                                     }).map(([key, { label, icon }]) => (
                                         <AccessToggle
                                             key={key} label={label} icon={icon as IconType}
@@ -884,7 +917,6 @@ export default function MembersPage() {
                                                             idCard: { label: "ID Card", icon: FiInfo },
                                                             bgRemover: { label: "BG Rmv", icon: FiTrash2 },
                                                             imageEnhancer: { label: "Enhancer", icon: FiStar },
-                                                            // assets: { label: "Assets", icon: FiFolder }, // REMOVED
                                                         }).map(([key, { label, icon }]) => (
                                                             <div key={key} className="flex items-center justify-between p-1 border border-gray-200 rounded-md bg-white shadow-xs">
                                                                 <div className="flex items-center gap-1">
